@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Tennis Tournament Manager</title>
+
+<style>
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    margin: 40px;
+}
+
+h1 {
+    text-align: center;
+}
+
+section {
+    background: white;
+    padding: 20px;
+    margin: 20px auto;
+    width: 600px;
+    border-radius: 8px;
+    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
+}
+
+input {
+    padding: 8px;
+    margin: 5px;
+}
+
+button {
+    padding: 6px 10px;
+    margin-left: 8px;
+    cursor: pointer;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+li {
+    padding: 8px;
+    border-bottom: 1px solid #ddd;
+}
+
+#message {
+    text-align: center;
+    color: green;
+    font-weight: bold;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Tennis Tournament Manager</h1>
+
+<div id="message"></div>
+
+<section>
+<h2>Add Player</h2>
+
+<form id="playerForm">
+<input type="text" id="name" placeholder="Name" required>
+<input type="number" id="age" placeholder="Age">
+<input type="number" id="ranking" placeholder="Ranking">
+<input type="number" id="seed" placeholder="Seed">
+<input id="scoreInput" placeholder="Score (6-4 6-3)">
+<button type="submit">Add Player</button>
+</form>
+
+</section>
+
+<section>
+<h2>Players</h2>
+<ul id="playerList"></ul>
+</section>
+
+<section>
+<h2>Matches</h2>
+<ul id="matchList"></ul>
+</section>
+
+<script>
+
+const API = "http://localhost:3000"
+
+const playerList = document.getElementById("playerList")
+const matchList = document.getElementById("matchList")
+const message = document.getElementById("message")
+
+function showMessage(text){
+    message.textContent = text
+    setTimeout(()=> message.textContent = "", 3000)
+}
+
+// Load Players
+async function loadPlayers(){
+
+    const res = await fetch(`${API}/players`)
+    const players = await res.json()
+
+    playerList.innerHTML = ""
+
+    players.forEach(player => {
+
+        const li = document.createElement("li")
+
+        li.innerHTML =
+        `${player.name} (Seed ${player.seed})
+        <button onclick="deletePlayer(${player.id})">Delete</button>`
+
+        playerList.appendChild(li)
+
+    })
+
+}
+
+// Add Player
+document.getElementById("playerForm").addEventListener("submit", async e => {
+
+    e.preventDefault()
+
+    const player = {
+        name: name.value,
+        age: age.value,
+        ranking: ranking.value,
+        seed: seed.value
+    }
+
+    await fetch(`${API}/players`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(player)
+    })
+
+    showMessage("Player added")
+
+    loadPlayers()
+
+})
+
+// Delete Player
+async function deletePlayer(id){
+
+    await fetch(`${API}/players/${id}`, {method:"DELETE"})
+
+    showMessage("Player removed")
+
+    loadPlayers()
+
+}
+
+// Load Matches
+async function loadMatches(){
+
+    const res = await fetch(`${API}/rounds/1/matches`)
+    const matches = await res.json()
+
+    matchList.innerHTML = ""
+
+    matches.forEach(match => {
+
+        const li = document.createElement("li")
+
+        li.innerHTML =
+        `${match.player1} vs ${match.player2}
+        <br>
+        Winner: ${match.winner ?? "TBD"}
+        <br>
+        Score: ${match.score ?? "-"}
+        <br>
+        <button onclick="setWinner(${match.id}, ${match.player1_id})">P1 Wins</button>
+        <button onclick="setWinner(${match.id}, ${match.player2_id})">P2 Wins</button>`
+
+        matchList.appendChild(li)
+
+    })
+
+}
+
+// Set Winner
+async function setWinner(matchId, playerId){
+
+    const score = document.getElementById("scoreInput").value
+
+    await fetch(`${API}/matches/${matchId}`, {
+        method:"PUT",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+            winner_id: playerId,
+            score: score
+        })
+    })
+
+    showMessage("Winner recorded")
+
+    loadMatches()
+
+}
+
+loadPlayers()
+loadMatches()
+
+</script>
+
+</body>
+</html>
