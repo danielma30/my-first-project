@@ -28,7 +28,7 @@ CREATE TABLE matches (
     id SERIAL PRIMARY KEY,
     round_id INTEGER NOT NULL,
     player1_id INTEGER NOT NULL,
-    player2_id INTEGER NOT NULL,
+    player2_id INTEGER,
     winner_id INTEGER,
     match_time TIMESTAMP,
     score VARCHAR(50),

@@ -52,6 +52,25 @@ li {
     font-weight: bold;
 }
 
+button {
+    background: #0077ff;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+button:hover {
+    background: #005fcc;
+}
+
+.match-card {
+    background: #fff;
+    padding: 15px;
+    border-left: 5px solid #0077ff;
+    margin-bottom: 10px;
+    border-radius: 6px;
+}
+
 </style>
 
 </head>
@@ -61,6 +80,7 @@ li {
 <h1>Tennis Tournament Manager</h1>
 
 <div id="message"></div>
+<div id="loading" style="display:none; text-align:center">Loading...</div>
 
 <section>
 <h2>Add Player</h2>
@@ -70,7 +90,6 @@ li {
 <input type="number" id="age" placeholder="Age">
 <input type="number" id="ranking" placeholder="Ranking">
 <input type="number" id="seed" placeholder="Seed">
-<input id="scoreInput" placeholder="Score (6-4 6-3)">
 <button type="submit">Add Player</button>
 </form>
 
@@ -82,8 +101,25 @@ li {
 </section>
 
 <section>
+  <h2>Select Tournament</h2>
+  <select id="tournamentSelect" onchange="onTournamentChange()"></select>
+</section>
+
+<section>
+  <h2>Create Tournament</h2>
+  <input id="tName" placeholder="Tournament Name">
+  <input id="tDate" type="date">
+  <button onclick="createTournament()">Create</button>
+</section>
+
+<section>
 <h2>Generate Random Matches</h2>
 <button onclick="generateMatches()">Generate Matches</button>
+</section>
+
+<section id="winnerSection" style="display:none;">
+  <h2>Tournament Winner</h2>
+  <div id="winnerNameDisplay" style="font-size:20px; font-weight:bold;"></div>
 </section>
 
 <section>
@@ -104,26 +140,79 @@ function showMessage(text){
     setTimeout(()=> message.textContent = "", 3000)
 }
 
+function showLoading() {
+    document.getElementById("loading").style.display = "block";
+}
+
+function hideLoading() {
+    document.getElementById("loading").style.display = "none";
+}
+
+// Load Tournaments
+async function loadTournaments() {
+    const res = await fetch(`${API}/tournaments`);
+    const tournaments = await res.json();
+
+    const select = document.getElementById("tournamentSelect");
+    select.innerHTML = "";
+
+    tournaments.forEach(t => {
+        const option = document.createElement("option");
+        option.value = t.id;
+        option.textContent = t.name;
+        select.appendChild(option);
+    });
+
+    loadMatches(select.value);
+}
+
+// Add Tournament
+async function createTournament() {
+    const t = {
+        name: document.getElementById("tName").value,
+        start_date: document.getElementById("tDate").value
+    };
+
+    await fetch(`${API}/tournaments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t)
+    });
+
+    showMessage("Tournament created!");
+    loadTournaments(); // refresh dropdown
+}
+
+function onTournamentChange() {
+    const id = document.getElementById("tournamentSelect").value;
+    document.getElementById("winnerSection").style.display = "none";
+    document.getElementById("winnerNameDisplay").textContent = "";
+    loadMatches(id);
+}
+
 // Load Players
 async function loadPlayers(){
-
+    showLoading()
     const res = await fetch(`${API}/players`)
+    hideLoading()
     const players = await res.json()
 
     playerList.innerHTML = ""
 
     players.forEach(player => {
 
-        const li = document.createElement("li")
+        const li = document.createElement("div")
+        li.className = "match-card"
 
-        li.innerHTML =
-        `${player.name} (Seed ${player.seed})
-        <button onclick="deletePlayer(${player.id})">Delete</button>`
+        li.innerHTML = `
+            ${player.name} (Seed ${player.seed})
+            <button onclick="editPlayer(${player.id}, '${player.name}', ${player.age}, ${player.ranking}, ${player.seed})">Edit</button>
+            <button onclick="deletePlayer(${player.id})">Delete</button>
+            `;
 
         playerList.appendChild(li)
 
     })
-
 }
 
 // Add Player
@@ -162,10 +251,12 @@ async function deletePlayer(id){
 }
 
 // Load Matches
-async function loadMatches(tournamentId = 1) {
+async function loadMatches(tournamentId) {
+    if (!tournamentId) {
+        tournamentId = document.getElementById("tournamentSelect").value;
+    }
     matchList.innerHTML = "<li>Loading matches...</li>";
 
-    // Get rounds for this tournament
     const resRound = await fetch(`${API}/tournaments/${tournamentId}/rounds`);
     const rounds = await resRound.json();
 
@@ -174,54 +265,47 @@ async function loadMatches(tournamentId = 1) {
         return;
     }
 
-    // 🔍 Find the FIRST round that actually has matches
-    let activeRound = null;
-
-    for (const r of rounds) {
-        const testRes = await fetch(`${API}/rounds/${r.id}/matches`);
-        const testMatches = await testRes.json();
-
-        if (testMatches.length > 0) {
-            activeRound = r.id;
-            break;
-        }
-    }
-
-    // If still none found:
-    if (!activeRound) {
-        matchList.innerHTML = "<li>No matches yet. Generate matches first.</li>";
-        return;
-    }
-
-    // Load matches for that found round
-    const res = await fetch(`${API}/rounds/${activeRound}/matches`);
-    const matches = await res.json();
-
     matchList.innerHTML = "";
 
-    matches.forEach(match => {
-        const li = document.createElement("li");
-        li.innerHTML = `
-            ${match.player1} vs ${match.player2 ?? "BYE"}
-            <br>
-            Winner: ${match.winner ?? "TBD"}
-            <br>
-            Score: ${match.score ?? "-"}
-            <br><br>
+    for (const r of rounds) {
+        const roundHeader = document.createElement("h3");
+        roundHeader.textContent = `Round ${r.round_number}`;
+        matchList.appendChild(roundHeader);
 
-            ${match.player2 ? `
-                <input id="score-${match.id}" placeholder="Enter score (e.g., 6-4 6-3)" />
+        const resMatches = await fetch(`${API}/rounds/${r.id}/matches`);
+        const matches = await resMatches.json();
+
+        if (matches.length === 0) {
+            const li = document.createElement("li");
+            li.textContent = "No matches for this round.";
+            matchList.appendChild(li);
+            continue;
+        }
+
+        matches.forEach(match => {
+            const li = document.createElement("div");
+            li.className = "match-card";
+            li.innerHTML = `
+                ${match.player1} vs ${match.player2 ?? "BYE"}
                 <br>
-                <button onclick="setWinner(${match.id}, ${match.player1_id})">${match.player1} Wins</button>
-                <button onclick="setWinner(${match.id}, ${match.player2_id})">${match.player2} Wins</button>
-            ` : `<i>Bye — automatically advances</i>`}
-        `;
-        matchList.appendChild(li);
-    });
+                Winner: ${match.winner ?? "TBD"}
+                <br>
+                Score: ${match.score ?? "-"}
+                <br><br>
+                ${match.player2 && match.winner === null ? `
+                    <input id="score-${match.id}" placeholder="Enter score (e.g., 6-4 6-3)" />
+                    <br>
+                    <button onclick="setWinner(${match.id}, ${match.player1_id})">${match.player1} Wins</button>
+                    <button onclick="setWinner(${match.id}, ${match.player2_id})">${match.player2} Wins</button>
+                ` : match.player2 === null ? `<i>Bye — automatically advances</i>` : ""}
+            `;
+            matchList.appendChild(li);
+        });
+    }
 }
 
 async function generateMatches() {
-    const tournamentId = 1;
+    const tournamentId = document.getElementById("tournamentSelect").value;
 
     await fetch(`${API}/tournaments/${tournamentId}/generate-matches`, {
         method: "POST"
@@ -230,31 +314,43 @@ async function generateMatches() {
     showMessage("Random matches generated!");
 
     // Refresh matches immediately
-    loadMatches(1);
+    loadMatches(tournamentId);
 }
 
-// Set Winner
+// Set Winner + Auto-Advance to Next Round
 async function setWinner(matchId, playerId){
-
     const score = document.getElementById(`score-${matchId}`).value;
-    
+
     await fetch(`${API}/matches/${matchId}`, {
         method:"PUT",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-            winner_id: playerId,
-            score: score
-        })
-    })
+        body: JSON.stringify({winner_id: playerId, score: score})
+    });
 
-    showMessage("Winner + score recorded")
+    showMessage("Winner + score recorded");
 
-    loadMatches()
+    // Generate next round if round is complete
+    const tournamentId = document.getElementById("tournamentSelect").value;
+    const data = await fetch(`${API}/tournaments/${tournamentId}/next-round`, {method: "POST"})
+        .then(r => r.json());
 
+    if (data.matchesCreated) {
+        showMessage(`Next round generated!`);
+    } else if (data.message?.includes("Tournament winner")) {
+        showMessage(data.message);
+        const winnerSection = document.getElementById("winnerSection");
+        const winnerDisplay = document.getElementById("winnerNameDisplay");
+        winnerDisplay.textContent = data.winnerName;
+        winnerSection.style.display = "block";
+        showMessage(`Tournament winner: ${data.winnerName}`);
+    }
+
+    // Reload matches for current active round
+    loadMatches(tournamentId);
 }
 
 loadPlayers()
-loadMatches(1)
+loadTournaments()
 
 </script>
 
