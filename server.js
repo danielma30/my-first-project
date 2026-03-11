@@ -32,7 +32,7 @@ async function resetMatches() {
     await query("ALTER SEQUENCE matches_id_seq RESTART WITH 1");
 }
 
-resetMatches();
+// resetMatches();
 
 // Getting all players
 app.get("/players", async (req, res) => {
