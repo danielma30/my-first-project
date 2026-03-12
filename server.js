@@ -326,6 +326,28 @@ app.get("/tournaments", async (req, res) => {
     }
 });
 
+// Deleting a tournament
+app.delete("/tournaments/:id", async (req, res) => {
+    const id = req.params.id;
+
+    try {
+        await query(
+            `DELETE FROM matches WHERE round_id IN (SELECT id FROM rounds WHERE tournament_id = $1)`,[id]
+        );
+
+        await query("DELETE FROM rounds WHERE tournament_id = $1",[id]
+        );
+
+        await query("DELETE FROM tournaments WHERE id = $1", [id]);
+
+        res.json({message: "Tournament deleted"});
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({error: "Failed to delete tournament"});
+    }
+});
+
+
 // Getting all rounds
 app.get("/tournaments/:id/rounds", async (req, res) => {
     const id = req.params.id;

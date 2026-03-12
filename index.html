@@ -103,6 +103,7 @@ button:hover {
 <section>
   <h2>Select Tournament</h2>
   <select id="tournamentSelect" onchange="onTournamentChange()"></select>
+  <button onclick="deleteTournament()">Delete Tournament</button>
 </section>
 
 <section>
@@ -272,6 +273,22 @@ async function deletePlayer(id){
 
     loadPlayers()
 
+}
+
+// Delete Tournament
+async function deleteTournament() {
+    const id = document.getElementById("tournamentSelect").value;
+
+    if (!confirm("Delete this tournament?")) return;
+
+    await fetch(`${API}/tournaments/${id}`, {
+        method: "DELETE"
+    });
+
+    showMessage("Tournament deleted");
+
+    loadTournaments();
+    matchList.innerHTML = "";
 }
 
 // Load Matches
