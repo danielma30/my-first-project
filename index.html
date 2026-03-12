@@ -206,7 +206,7 @@ async function loadPlayers(){
 
         li.innerHTML = `
             ${player.name} (Seed ${player.seed})
-            <button onclick="editPlayer(${player.id}, '${player.name}', ${player.age}, ${player.ranking}, ${player.seed})">Edit</button>
+            <button onclick='editPlayer(${player.id}, ${JSON.stringify(player.name)}, ${player.age}, ${player.ranking}, ${player.seed})'>Edit</button>
             <button onclick="deletePlayer(${player.id})">Delete</button>
             `;
 
@@ -238,6 +238,30 @@ document.getElementById("playerForm").addEventListener("submit", async e => {
     loadPlayers()
 
 })
+
+// Edit Player
+function editPlayer(id, name, age, ranking, seed) {
+    const newName = prompt("New name:", name);
+    const newAge = prompt("New age:", age);
+    const newRanking = prompt("New ranking:", ranking);
+    const newSeed = prompt("New seed:", seed);
+
+    if (!newName) return;
+
+    fetch(`${API}/players/${id}`, {
+        method:"PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            name: newName,
+            age: Number(newAge),
+            ranking: Number(newRanking),
+            seed: Number(newSeed)
+        })
+    }).then(() => {
+        showMessage("Player updated");
+        loadPlayers();
+    });
+}
 
 // Delete Player
 async function deletePlayer(id){

@@ -32,7 +32,7 @@ async function resetMatches() {
     await query("ALTER SEQUENCE matches_id_seq RESTART WITH 1");
 }
 
-// resetMatches();
+resetMatches();
 
 // Getting all players
 app.get("/players", async (req, res) => {
@@ -288,7 +288,11 @@ app.post("/tournaments/:id/next-round", async (req, res) => {
 app.delete("/matches/:id", async (req, res) => {
     const id = req.params.id;
     try {
-        await query("DELETE FROM matches WHERE id=$1", [id]);
+        await query(`
+            DELETE FROM matches
+            WHERE round_id IN (SELECT id FROM rounds WHERE tournament_id = $1)`, [tournament_id]
+        );
+        await query("DELETE FROM rounds WHERE tournament_id = $1", [tournament_id]);
         res.json({message: "Match has been deleted"});
     } catch (err) {
         console.error(err);

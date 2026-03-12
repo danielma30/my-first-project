@@ -34,9 +34,9 @@ CREATE TABLE matches (
     score VARCHAR(50),
 
     FOREIGN KEY (round_id) REFERENCES rounds(id),
-    FOREIGN KEY (player1_id) REFERENCES players(id),
-    FOREIGN KEY (player2_id) REFERENCES players(id),
-    FOREIGN KEY (winner_id) REFERENCES players(id),
+    FOREIGN KEY (player1_id) REFERENCES players(id) ON DELETE CASCADE,
+    FOREIGN KEY (player2_id) REFERENCES players(id) ON DELETE CASCADE,
+    FOREIGN KEY (winner_id) REFERENCES players(id) ON DELETE CASCADE,
 
     CHECK (player1_id <> player2_id),
     CHECK (winner_id IS NULL OR winner_id IN (player1_id, player2_id))
