@@ -58,6 +58,9 @@ app.post("/players", async (req, res) => {
         );
         res.json(result.rows[0]);
     } catch (err) {
+        if (err.code === "23505") { // Unique violation in PostgreSQL
+            return res.status(400).json({ error: "Ranking or Seed must be unique" });
+        }
         console.error(err);
         res.status(500).json({error: "Failed to create player"});
     }
@@ -75,6 +78,9 @@ app.put("/players/:id", async (req, res) => {
         );
         res.json(result.rows[0]);
     } catch (err) {
+        if (err.code === "23505") { // Unique violation in PostgreSQL
+            return res.status(400).json({ error: "Ranking or Seed must be unique" });
+        }
         console.error(err);
         res.status(500).json({error: "Failed to update player"});
     }

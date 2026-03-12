@@ -3,8 +3,8 @@ CREATE TABLE players (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     age INTEGER,
-    ranking INTEGER,
-    seed INTEGER 
+    ranking INTEGER UNIQUE,
+    seed INTEGER UNIQUE 
 );
 
 -- tournament table
@@ -27,7 +27,7 @@ CREATE TABLE rounds (
 CREATE TABLE matches (
     id SERIAL PRIMARY KEY,
     round_id INTEGER NOT NULL,
-    player1_id INTEGER,
+    player1_id INTEGER NOT NULL,
     player2_id INTEGER,
     winner_id INTEGER,
     match_time TIMESTAMP,

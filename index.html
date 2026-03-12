@@ -104,6 +104,7 @@ button:hover {
   <h2>Select Tournament</h2>
   <select id="tournamentSelect" onchange="onTournamentChange()"></select>
   <button onclick="deleteTournament()">Delete Tournament</button>
+  <div id="tournamentDate" style="margin-top:8px; font-weight:bold;"></div> <!-- NEW -->
 </section>
 
 <section>
@@ -150,9 +151,13 @@ function hideLoading() {
 }
 
 // Load Tournaments
+let tournamentsData = [];
+
 async function loadTournaments() {
     const res = await fetch(`${API}/tournaments`);
     const tournaments = await res.json();
+
+    tournamentsData = tournaments;
 
     const select = document.getElementById("tournamentSelect");
     select.innerHTML = "";
@@ -164,7 +169,10 @@ async function loadTournaments() {
         select.appendChild(option);
     });
 
-    loadMatches(select.value);
+    if (tournaments.length > 0) {
+        showTournamentDate(select.value);
+        loadMatches(select.value);
+    }
 }
 
 // Add Tournament
@@ -184,95 +192,25 @@ async function createTournament() {
     loadTournaments(); // refresh dropdown
 }
 
+function showTournamentDate(tournamentId) {
+    const dateDiv = document.getElementById("tournamentDate");
+    const tournament = tournamentsData.find(t => t.id == tournamentId);
+    if (tournament) {
+        const date = new Date(tournament.start_date);
+        dateDiv.textContent = `Start Date: ${date.toLocaleDateString()}`;
+    } else {
+        dateDiv.textContent = "";
+    }
+}
+
 function onTournamentChange() {
     const id = document.getElementById("tournamentSelect").value;
     document.getElementById("winnerSection").style.display = "none";
     document.getElementById("winnerNameDisplay").textContent = "";
+
+    showTournamentDate(id); // NEW
+
     loadMatches(id);
-}
-
-// Load Players
-async function loadPlayers(){
-    showLoading()
-    const res = await fetch(`${API}/players`)
-    hideLoading()
-    const players = await res.json()
-
-    playerList.innerHTML = ""
-
-    players.forEach(player => {
-
-        const li = document.createElement("div")
-        li.className = "match-card"
-
-        li.innerHTML = `
-            ${player.name} (Seed ${player.seed})
-            <button onclick='editPlayer(${player.id}, ${JSON.stringify(player.name)}, ${player.age}, ${player.ranking}, ${player.seed})'>Edit</button>
-            <button onclick="deletePlayer(${player.id})">Delete</button>
-            `;
-
-        playerList.appendChild(li)
-
-    })
-}
-
-// Add Player
-document.getElementById("playerForm").addEventListener("submit", async e => {
-
-    e.preventDefault()
-
-    const player = {
-        name: document.getElementById("name").value,
-        age: document.getElementById("age").value,
-        ranking: document.getElementById("ranking").value,
-        seed: document.getElementById("seed").value
-    };
-
-    await fetch(`${API}/players`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(player)
-    })
-
-    showMessage("Player added")
-
-    loadPlayers()
-
-})
-
-// Edit Player
-function editPlayer(id, name, age, ranking, seed) {
-    const newName = prompt("New name:", name);
-    const newAge = prompt("New age:", age);
-    const newRanking = prompt("New ranking:", ranking);
-    const newSeed = prompt("New seed:", seed);
-
-    if (!newName) return;
-
-    fetch(`${API}/players/${id}`, {
-        method:"PUT",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-            name: newName,
-            age: Number(newAge),
-            ranking: Number(newRanking),
-            seed: Number(newSeed)
-        })
-    }).then(() => {
-        showMessage("Player updated");
-        loadPlayers();
-    });
-}
-
-// Delete Player
-async function deletePlayer(id){
-
-    await fetch(`${API}/players/${id}`, {method:"DELETE"})
-
-    showMessage("Player removed")
-
-    loadPlayers()
-
 }
 
 // Delete Tournament
@@ -289,6 +227,135 @@ async function deleteTournament() {
 
     loadTournaments();
     matchList.innerHTML = "";
+}
+
+// Load Players
+async function loadPlayers() {
+    showLoading();
+    const res = await fetch(`${API}/players`);
+    hideLoading();
+    const players = await res.json();
+
+    playerList.innerHTML = "";
+
+    players.forEach(player => {
+        const li = document.createElement("div");
+        li.className = "match-card";
+
+        // Add data attributes for uniqueness checks
+        li.dataset.id = player.id;
+        li.dataset.ranking = player.ranking;
+        li.dataset.seed = player.seed;
+
+        li.innerHTML = `
+            ${player.name} (Age ${player.age}, Ranking ${player.ranking}, Seed ${player.seed})
+            <button onclick='editPlayer(${player.id}, ${JSON.stringify(player.name)}, ${player.age}, ${player.ranking}, ${player.seed})'>Edit</button>
+            <button onclick="deletePlayer(${player.id})">Delete</button>
+        `;
+        playerList.appendChild(li);
+    });
+}
+
+// Add Player
+document.getElementById("playerForm").addEventListener("submit", async e => {
+    e.preventDefault();
+
+    const name = document.getElementById("name").value.trim();
+    const age = Number(document.getElementById("age").value);
+    const ranking = Number(document.getElementById("ranking").value);
+    const seed = Number(document.getElementById("seed").value);
+
+    if (!name) return showMessage("Name cannot be empty");
+    if (!Number.isInteger(age) || age < 10 || age > 100) return showMessage("Age must be 10-100");
+    if (!Number.isInteger(ranking) || ranking <= 0) return showMessage("Ranking must be positive");
+    if (!Number.isInteger(seed) || seed <= 0) return showMessage("Seed must be positive");
+
+    // Check uniqueness
+    const uniqueCheck = isUniquePlayer(ranking, seed);
+    if (!uniqueCheck.valid) return showMessage(`${uniqueCheck.field} must be unique`);
+
+    await fetch(`${API}/players`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ name, age, ranking, seed })
+    });
+
+    showMessage("Player added");
+    loadPlayers();
+});
+
+// Edit Player
+function editPlayer(id, name, age, ranking, seed) {
+    const newName = prompt("New name:", name);
+    if (!newName || !newName.trim()) {
+        return showMessage("Name cannot be empty");
+    }
+
+    const newAge = Number(prompt("New age:", age));
+    if (!Number.isInteger(newAge) || newAge < 10 || newAge > 100) {
+        return showMessage("Age must be a valid number between 10 and 100");
+    }
+
+    const newRanking = Number(prompt("New ranking:", ranking));
+    if (!Number.isInteger(newRanking) || newRanking <= 0) {
+        return showMessage("Ranking must be a positive integer");
+    }
+
+    const newSeed = Number(prompt("New seed:", seed));
+    if (!Number.isInteger(newSeed) || newSeed <= 0) {
+        return showMessage("Seed must be a positive integer");
+    }
+
+    const uniqueCheck = isUniquePlayer(newRanking, newSeed, id);
+    if (!uniqueCheck.valid) {
+        return showMessage(`${uniqueCheck.field} must be unique`);
+    }
+
+    // Send update to server
+    fetch(`${API}/players/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            name: newName.trim(),
+            age: newAge,
+            ranking: newRanking,
+            seed: newSeed
+        })
+    })
+    .then(() => {
+        showMessage("Player updated successfully");
+        loadPlayers();
+    })
+    .catch(err => {
+        console.error(err);
+        showMessage("Failed to update player");
+    });
+}
+
+// Delete Player
+async function deletePlayer(id){
+
+    await fetch(`${API}/players/${id}`, {method:"DELETE"})
+
+    showMessage("Player removed")
+
+    loadPlayers()
+
+}
+
+// Check Player is Unique
+function isUniquePlayer(ranking, seed, excludeId = null) {
+    const players = Array.from(document.querySelectorAll("#playerList .match-card"));
+    for (const p of players) {
+        const existingRanking = Number(p.dataset.ranking);
+        const existingSeed = Number(p.dataset.seed);
+        const playerId = Number(p.dataset.id);
+        if (excludeId && playerId === excludeId) continue;
+
+        if (ranking === existingRanking) return { valid: false, field: "ranking" };
+        if (seed === existingSeed) return { valid: false, field: "seed" };
+    }
+    return { valid: true };
 }
 
 // Load Matches
