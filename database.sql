@@ -27,7 +27,7 @@ CREATE TABLE rounds (
 CREATE TABLE matches (
     id SERIAL PRIMARY KEY,
     round_id INTEGER NOT NULL,
-    player1_id INTEGER NOT NULL,
+    player1_id INTEGER,
     player2_id INTEGER,
     winner_id INTEGER,
     match_time TIMESTAMP,
@@ -58,14 +58,6 @@ INSERT INTO tournaments (name, start_date) VALUES
 ('City Championships', '2026-05-10'),
 ('Summer Regional Qualifier', '2026-06-01'),
 ('Fall Youth Classic', '2026-09-20');
-
--- data for round table (3 rounds per tournament)
-INSERT INTO rounds (tournament_id, round_number) VALUES
-(1, 1), (1, 2), (1, 3), 
-(2, 1), (2, 2), (2, 3), 
-(3, 1), (3, 2), (3, 3), 
-(4, 1), (4, 2), (4, 3), 
-(5, 1), (5, 2), (5, 3);
 
 -- data for match table (bracket format)
 INSERT INTO matches (round_id, player1_id, player2_id, match_time) VALUES

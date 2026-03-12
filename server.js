@@ -99,7 +99,7 @@ app.get("/rounds/:roundId/matches", async (req, res) => {
 
     try {
         const result = await query(
-            "SELECT m.id, m.player1_id, m.player2_id, p1.name AS player1, p2.name AS player2, w.name AS winner, m.match_time, m.score FROM matches m JOIN players p1 ON m.player1_id = p1.id JOIN players p2 ON m.player2_id = p2.id LEFT JOIN players w ON m.winner_id = w.id WHERE m.round_id = $1 ORDER BY m.match_time",
+            "SELECT m.id, m.player1_id, m.player2_id, p1.name AS player1, p2.name AS player2, w.name AS winner, m.match_time, m.score FROM matches m LEFT JOIN players p1 ON m.player1_id = p1.id LEFT JOIN players p2 ON m.player2_id = p2.id LEFT JOIN players w ON m.winner_id = w.id WHERE m.round_id = $1 ORDER BY m.match_time",
             [roundId]
         );
         res.json(result.rows);
@@ -114,48 +114,59 @@ app.post("/tournaments/:id/generate-matches", async (req, res) => {
     const tournament_id = req.params.id;
 
     try {
-        const roundResult = await query(
-            "SELECT id FROM rounds WHERE tournament_id = $1 AND round_number = 1",
-            [tournament_id]
-        );
+        // 1. DELETE existing matches for this tournament
+        await query(`
+            DELETE FROM matches
+            WHERE round_id IN (
+                SELECT id FROM rounds WHERE tournament_id = $1
+            )
+        `, [tournament_id]);
 
-        if (roundResult.rows.length === 0) {
-            return res.status(400).json({error: "Round 1 not found for this tournament"});
-        }
+        await query("DELETE FROM rounds WHERE tournament_id = $1", [tournament_id]);
 
-        const roundId = roundResult.rows[0].id;
-
-        await query("DELETE FROM matches WHERE round_id = $1", [roundId]);
-
+        // 2. Count players
         const playersResult = await query(
             "SELECT id FROM players ORDER BY RANDOM()"
         );
-        let players = playersResult.rows.map(row => row.id);
+        let players = playersResult.rows.map(p => p.id);
+        let playerCount = players.length;
 
-        let matches = [];
+        // 3. Create Round 1
+        const round1 = await query(
+            "INSERT INTO rounds (tournament_id, round_number) VALUES ($1, $2) RETURNING id",
+            [tournament_id, 1]
+        );
+        const round1Id = round1.rows[0].id;
+
+        // 4. Pair players
+        let matchPairs = [];
 
         while (players.length >= 2) {
             let p1 = players.pop();
-            let p2 = players.pop();
-
-            matches.push([p1, p2]);
+            let p2 = players.pop() ?? null;
+            matchPairs.push([p1, p2]);
         }
 
         if (players.length === 1) {
-            let byePlayer = players.pop();
-            matches.push([byePlayer, null]);
+            // BYE
+            matchPairs.push([players.pop(), null]);
         }
 
-        for (const match of matches) {
-            const [p1, p2] = match;
+        // 5. Insert matches
+        for (const [p1, p2] of matchPairs) {
+
+            if (!p1) continue;
 
             await query(
-                "INSERT INTO matches(round_id, player1_id, player2_id, match_time) VALUES ($1, $2, $3, NOW())",
-                [roundId, p1, p2]
+                "INSERT INTO matches(round_id, player1_id, player2_id, match_time, winner_id) VALUES ($1, $2, $3, NOW(), $4)",
+                [round1Id, p1, p2 ?? null, p2 === null ? p1 : null]
             );
         }
-        
-        return res.json({message: "Matches generated", matchesCreated: matches.length});
+
+        return res.json({
+            message: "Round 1 generated dynamically",
+            matchesCreated: matchPairs.length
+        });
     
     } catch (err) {
         console.error(err);
@@ -186,92 +197,75 @@ app.post("/tournaments/:id/next-round", async (req, res) => {
     const tournament_id = req.params.id;
 
     try {
-        // Get all rounds for tournament
+        // 1. Load existing rounds
         const roundsResult = await query(
             "SELECT * FROM rounds WHERE tournament_id = $1 ORDER BY round_number ASC",
             [tournament_id]
         );
         const rounds = roundsResult.rows;
-        if (rounds.length === 0) return res.status(400).json({error: "No rounds in tournament"});
 
-        // Find last round with matches
-        let lastRoundWithMatches = null;
-        for (const r of rounds) {
-            const matchResult = await query("SELECT * FROM matches WHERE round_id = $1", [r.id]);
-            if (matchResult.rows.length > 0) lastRoundWithMatches = r;
+        if (rounds.length === 0) {
+            return res.status(400).json({error: "Generate matches first"});
         }
 
-        // If no matches exist yet, generate Round 1
-        if (!lastRoundWithMatches) {
-            const round1 = rounds[0];
-            const playersResult = await query("SELECT id FROM players ORDER BY RANDOM()");
-            let players = playersResult.rows.map(p => p.id);
+        const lastRound = rounds[rounds.length - 1];
 
-            let matchPairs = [];
-            while (players.length >= 2) matchPairs.push([players.pop(), players.pop()]);
-            if (players.length === 1) matchPairs.push([players.pop(), null]); // BYE
+        const matchesResult = await query(
+            "SELECT * FROM matches WHERE round_id = $1",
+            [lastRound.id]
+        );
+        const matches = matchesResult.rows;
 
-            for (const [p1, p2] of matchPairs) {
-                await query(
-                    "INSERT INTO matches(round_id, player1_id, player2_id, match_time, winner_id) VALUES ($1, $2, $3, NOW(), $4)",
-                    [round1.id, p1, p2, p2 === null ? p1 : null]
-                );
-            }
-            return res.json({message: `Round 1 generated`, matchesCreated: matchPairs.length});
+        // 2. Do not generate next round until ALL matches finished
+        const allCompleted = matches.every(m =>
+            m.winner_id !== null || m.player2_id === null
+        );
+
+        if (!allCompleted) {
+            return res.json({message: "Round not complete"});
         }
 
-        // Get matches of last round
-        const matchResult = await query("SELECT m.* FROM matches m JOIN rounds r ON m.round_id = r.id WHERE r.tournament_id = $1 AND r.id = $2", [tournament_id, lastRoundWithMatches.id]);
-        const matches = matchResult.rows;
+        // 3. Collect winners
+        const winners = matches.map(
+            m => m.winner_id ?? m.player1_id
+        );
 
-        // Check if all matches are completed (or BYE)
-        const allCompleted = matches.every(m => m.winner_id !== null || m.player2_id === null);
-        if (!allCompleted) return res.json({message: `Current round ${lastRoundWithMatches.round_number} is not yet complete`});
-
-        // Collect winners including BYEs
-        const winners = matches.map(m => m.winner_id ?? m.player1_id).filter(Boolean);
-
-        // If only 1 winner and no pending BYE players, declare tournament winner
-        const nextRoundNumber = lastRoundWithMatches.round_number + 1;
-        if (winners.length === 1 && nextRoundNumber > rounds.length) {
-            const winnerId = winners[0];
-            const winnerResult = await query(
+        // 4. If only 1 winner → tournament is finished
+        if (winners.length === 1) {
+            const resultWinner = await query(
                 "SELECT name FROM players WHERE id = $1",
-                [winnerId]
+                [winners[0]]
             );
-            const winnerName = winnerResult.rows[0].name;
+            const winnerName = resultWinner.rows[0].name;
 
-            return res.json({ 
-                message: `Tournament winner: ${winnerName}`, 
-                winnerName: winnerName,
-                winnerId: winnerId
+            return res.json({
+                message: `Tournament winner: ${winnerName}`,
+                winnerName
             });
         }
 
-        // Generate next round
-        let nextRoundId;
+        // 5. Create next round
+        const nextRoundNumber = lastRound.round_number + 1;
 
-        const nextRoundResult = await query(
-            "SELECT id FROM rounds WHERE tournament_id = $1 AND round_number = $2",
+        const nextRound = await query(
+            "INSERT INTO rounds (tournament_id, round_number) VALUES ($1, $2) RETURNING id",
             [tournament_id, nextRoundNumber]
         );
+        const nextRoundId = nextRound.rows[0].id;
 
-        if (nextRoundResult.rows.length === 0) {
-            const insertResult = await query(
-                "INSERT INTO rounds (tournament_id, round_number) VALUES ($1, $2) RETURNING id",
-                [tournament_id, nextRoundNumber]
-            );
-            nextRoundId = insertResult.rows[0].id;
-        } else {
-            nextRoundId = nextRoundResult.rows[0].id;
+        // 6. Pair winners
+        let shuffled = winners.sort(() => Math.random() - 0.5);
+        let matchPairs = [];
+
+        while (shuffled.length >= 2) {
+            matchPairs.push([shuffled.pop(), shuffled.pop()]);
         }
 
-        // Shuffle winners and pair them
-        let matchPairs = [];
-        const shuffled = winners.sort(() => Math.random() - 0.5);
-        while (shuffled.length >= 2) matchPairs.push([shuffled.pop(), shuffled.pop()]);
-        if (shuffled.length === 1) matchPairs.push([shuffled.pop(), null]); // BYE
+        if (shuffled.length === 1) {
+            matchPairs.push([shuffled.pop(), null]);
+        }
 
+        // 7. Insert matches
         for (const [p1, p2] of matchPairs) {
             await query(
                 "INSERT INTO matches(round_id, player1_id, player2_id, match_time, winner_id) VALUES ($1, $2, $3, NOW(), $4)",
@@ -279,7 +273,10 @@ app.post("/tournaments/:id/next-round", async (req, res) => {
             );
         }
 
-        res.json({message: `Round ${nextRoundNumber} generated`, matchesCreated: matchPairs.length});
+        res.json({
+            message: `Round ${nextRoundNumber} generated`,
+            matchesCreated: matchPairs.length
+        });
 
     } catch (err) {
         console.error(err);
