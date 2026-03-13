@@ -58,17 +58,3 @@ INSERT INTO tournaments (name, start_date) VALUES
 ('City Championships', '2026-05-10'),
 ('Summer Regional Qualifier', '2026-06-01'),
 ('Fall Youth Classic', '2026-09-20');
-
--- data for match table (bracket format)
-INSERT INTO matches (round_id, player1_id, player2_id, match_time) VALUES
-(1, 1, 2, '2026-03-15 10:00'),
-(1, 3, 4, '2026-03-15 11:00'),
-(2, 1, 3, '2026-03-16 09:00'),
-(3, 1, 5, '2026-03-17 12:00'),
-(3, 4, 6, '2026-03-17 14:00'),
-
-(4, 2, 3, '2026-04-02 10:30'),
-(4, 1, 6, '2026-04-02 12:00'),
-(5, 2, 6, '2026-04-03 10:00'),
-(6, 2, 4, '2026-04-04 13:00'),
-(6, 5, 1, '2026-04-04 15:00');
